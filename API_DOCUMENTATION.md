@@ -6,18 +6,23 @@
 
 ---
 
+DEV ENDPOINT IN HEROKU - https://chargehive-backend-dev-c567e0fd7ba7.herokuapp.com/
+
 ## Table of Contents
+
 1. [Authentication](#authentication)
 2. [Provider APIs](#provider-apis)
 3. [User APIs](#user-apis)
-4. [Sessions APIs](#sessions-apis)
-5. [Error Responses](#error-responses)
+4. [Services APIs](#services-apis)
+5. [Sessions APIs](#sessions-apis)
+6. [Error Responses](#error-responses)
 
 ---
 
 ## Authentication
 
 All authenticated endpoints require a JWT token in the Authorization header:
+
 ```
 Authorization: Bearer <your-jwt-token>
 ```
@@ -27,11 +32,13 @@ Authorization: Bearer <your-jwt-token>
 ## Provider APIs
 
 ### 1. Provider Signup
+
 **Endpoint:** `POST /api/provider/signup`
 **Description:** Register a new provider account with blockchain wallet
 **Authentication:** Not required
 
 **Request Body:**
+
 ```json
 {
   "email": "provider@example.com",
@@ -43,6 +50,7 @@ Authorization: Bearer <your-jwt-token>
 ```
 
 **Response (201 Created):**
+
 ```json
 {
   "success": true,
@@ -62,6 +70,7 @@ Authorization: Bearer <your-jwt-token>
 ```
 
 **Error Response (400 Bad Request):**
+
 ```json
 {
   "message": "Email already exists",
@@ -73,11 +82,13 @@ Authorization: Bearer <your-jwt-token>
 ---
 
 ### 2. Provider Login
+
 **Endpoint:** `POST /api/provider/login`
 **Description:** Authenticate provider and receive JWT token
 **Authentication:** Not required
 
 **Request Body:**
+
 ```json
 {
   "email": "provider@example.com",
@@ -86,6 +97,7 @@ Authorization: Bearer <your-jwt-token>
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "success": true,
@@ -103,6 +115,7 @@ Authorization: Bearer <your-jwt-token>
 ```
 
 **Error Response (401 Unauthorized):**
+
 ```json
 {
   "message": "Invalid credentials",
@@ -114,17 +127,20 @@ Authorization: Bearer <your-jwt-token>
 ---
 
 ### 3. Add Service (Parking/Charging Station)
+
 **Endpoint:** `POST /api/provider/services`
 **Description:** Register a new parking spot or EV charging station
 **Authentication:** Required (Provider)
 
 **Request Headers:**
+
 ```
 Authorization: Bearer <provider-jwt-token>
 Content-Type: application/json
 ```
 
 **Request Body:**
+
 ```json
 {
   "serviceType": "parking",
@@ -142,12 +158,14 @@ Content-Type: application/json
 ```
 
 **Field Descriptions:**
+
 - `serviceType`: "parking" or "charger"
 - `status`: "available", "occupied", "maintenance"
 - `hourlyRate`: Price per hour (optional, defaults to "10")
 - `latitude`, `longitude`: Optional GPS coordinates
 
 **Response (201 Created):**
+
 ```json
 {
   "success": true,
@@ -169,6 +187,7 @@ Content-Type: application/json
 ```
 
 **Error Response (400 Bad Request):**
+
 ```json
 {
   "message": [
@@ -183,16 +202,19 @@ Content-Type: application/json
 ---
 
 ### 4. Get Provider Profile
+
 **Endpoint:** `GET /api/provider/profile`
 **Description:** Get authenticated provider's profile
 **Authentication:** Required (Provider)
 
 **Request Headers:**
+
 ```
 Authorization: Bearer <provider-jwt-token>
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "success": true,
@@ -213,11 +235,13 @@ Authorization: Bearer <provider-jwt-token>
 ## User APIs
 
 ### 1. User Registration
+
 **Endpoint:** `POST /api/user/register`
 **Description:** Register a new user account with blockchain wallet
 **Authentication:** Not required
 
 **Request Body:**
+
 ```json
 {
   "email": "user@example.com",
@@ -228,6 +252,7 @@ Authorization: Bearer <provider-jwt-token>
 ```
 
 **Response (201 Created):**
+
 ```json
 {
   "success": true,
@@ -246,6 +271,7 @@ Authorization: Bearer <provider-jwt-token>
 ```
 
 **Error Response (400 Bad Request):**
+
 ```json
 {
   "message": "Email already exists",
@@ -257,11 +283,13 @@ Authorization: Bearer <provider-jwt-token>
 ---
 
 ### 2. User Login
+
 **Endpoint:** `POST /api/user/login`
 **Description:** Authenticate user and receive JWT token
 **Authentication:** Not required
 
 **Request Body:**
+
 ```json
 {
   "email": "user@example.com",
@@ -270,6 +298,7 @@ Authorization: Bearer <provider-jwt-token>
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "success": true,
@@ -287,6 +316,7 @@ Authorization: Bearer <provider-jwt-token>
 ```
 
 **Error Response (401 Unauthorized):**
+
 ```json
 {
   "message": "Invalid credentials",
@@ -298,16 +328,19 @@ Authorization: Bearer <provider-jwt-token>
 ---
 
 ### 3. Get User Profile
+
 **Endpoint:** `GET /api/user/profile`
 **Description:** Get authenticated user's profile
 **Authentication:** Required (User)
 
 **Request Headers:**
+
 ```
 Authorization: Bearer <user-jwt-token>
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "success": true,
@@ -324,20 +357,81 @@ Authorization: Bearer <user-jwt-token>
 
 ---
 
+## Services APIs
+
+### 1. Get All Services
+
+**Endpoint:** `GET /api/services`
+**Description:** Get all parking spots and EV charging stations (regardless of status)
+**Authentication:** Not required (Public endpoint)
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "serviceId": "uuid-1",
+      "serviceType": "parking",
+      "status": "available",  // Can be: available, occupied, maintenance, or null
+      "address": "123 Main Street",
+      "city": "San Francisco",
+      "state": "CA",
+      "postalCode": "94102",
+      "country": "USA",
+      "latitude": "37.7749",
+      "longitude": "-122.4194",
+      "hourlyRate": "15",
+      "description": "Covered parking with security",
+      "image1": "https://...",
+      "image2": "https://...",
+      "image3": null,
+      "createdAt": "2025-10-21T10:00:00Z"
+    },
+    {
+      "serviceId": "uuid-2",
+      "serviceType": "charger",
+      "status": "available",
+      "address": "456 Oak Avenue",
+      "city": "Los Angeles",
+      "state": "CA",
+      "postalCode": "90001",
+      "country": "USA",
+      "latitude": "34.0522",
+      "longitude": "-118.2437",
+      "hourlyRate": "20",
+      "description": "Fast DC charging",
+      "image1": "https://...",
+      "image2": null,
+      "image3": null,
+      "createdAt": "2025-10-21T11:00:00Z"
+    }
+  ]
+}
+```
+
+**Note:** Returns all services regardless of status. The frontend should filter by status if needed.
+
+---
+
 ## Sessions APIs
 
 ### 1. Book a Session
+
 **Endpoint:** `POST /api/sessions/book`
 **Description:** Book a parking or charging session. Automatically checks for overlapping bookings and calculates total amount based on duration and hourly rate.
 **Authentication:** Required (User)
 
 **Request Headers:**
+
 ```
 Authorization: Bearer <user-jwt-token>
 Content-Type: application/json
 ```
 
 **Request Body:**
+
 ```json
 {
   "serviceId": "550e8400-e29b-41d4-a716-446655440000",
@@ -347,11 +441,13 @@ Content-Type: application/json
 ```
 
 **Field Descriptions:**
+
 - `serviceId`: UUID of the service (parking/charging station) to book
 - `fromDatetime`: Start date and time (ISO 8601 format, UTC)
 - `toDatetime`: End date and time (ISO 8601 format, UTC)
 
 **Response (201 Created):**
+
 ```json
 {
   "success": true,
@@ -370,11 +466,13 @@ Content-Type: application/json
 ```
 
 **Calculation Example:**
+
 - Duration: 2 hours (10:00 AM - 12:00 PM)
 - Hourly Rate: $15/hour
 - Total Amount: 2 × $15 = **$30.00**
 
 **Error Response - Time Overlap (400 Bad Request):**
+
 ```json
 {
   "message": "This service is already booked for the selected time slot. Please choose a different time.",
@@ -384,6 +482,7 @@ Content-Type: application/json
 ```
 
 **Error Response - Service Unavailable (400 Bad Request):**
+
 ```json
 {
   "message": "Service is not available for booking. Current status: maintenance",
@@ -393,6 +492,7 @@ Content-Type: application/json
 ```
 
 **Error Response - Service Not Found (404 Not Found):**
+
 ```json
 {
   "message": "Service not found",
@@ -402,6 +502,7 @@ Content-Type: application/json
 ```
 
 **Error Response - Past Booking (400 Bad Request):**
+
 ```json
 {
   "message": "Cannot book a session in the past",
@@ -411,6 +512,7 @@ Content-Type: application/json
 ```
 
 **Error Response - Invalid Time Range (400 Bad Request):**
+
 ```json
 {
   "message": "From datetime must be before to datetime",
@@ -422,16 +524,19 @@ Content-Type: application/json
 ---
 
 ### 2. Get All User Sessions
+
 **Endpoint:** `GET /api/sessions`
 **Description:** Retrieve all sessions booked by the authenticated user, including service details
 **Authentication:** Required (User)
 
 **Request Headers:**
+
 ```
 Authorization: Bearer <user-jwt-token>
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "success": true,
@@ -485,7 +590,9 @@ Authorization: Bearer <user-jwt-token>
 ### Common HTTP Status Codes
 
 #### 400 Bad Request
+
 Validation errors, business logic errors, or malformed requests.
+
 ```json
 {
   "message": "Validation failed",
@@ -495,7 +602,9 @@ Validation errors, business logic errors, or malformed requests.
 ```
 
 #### 401 Unauthorized
+
 Missing or invalid JWT token.
+
 ```json
 {
   "message": "Unauthorized",
@@ -505,7 +614,9 @@ Missing or invalid JWT token.
 ```
 
 #### 403 Forbidden
+
 User doesn't have permission (e.g., User trying to access Provider endpoints).
+
 ```json
 {
   "message": "Forbidden resource",
@@ -515,7 +626,9 @@ User doesn't have permission (e.g., User trying to access Provider endpoints).
 ```
 
 #### 404 Not Found
+
 Requested resource doesn't exist.
+
 ```json
 {
   "message": "Resource not found",
@@ -525,7 +638,9 @@ Requested resource doesn't exist.
 ```
 
 #### 500 Internal Server Error
+
 Server error.
+
 ```json
 {
   "message": "Internal server error",
@@ -539,24 +654,30 @@ Server error.
 ## Additional Notes
 
 ### Date/Time Format
+
 All datetime fields use **ISO 8601 format in UTC timezone**:
+
 ```
 2025-10-21T10:00:00Z
 ```
 
 ### Service Types
+
 - `parking` - Parking spot
 - `charger` - EV charging station
 
 ### Service Status
+
 - `available` - Ready for booking
 - `occupied` - Currently in use
 - `maintenance` - Temporarily unavailable
 
 ### JWT Token Expiration
+
 JWT tokens expire after **24 hours**. After expiration, users must login again.
 
 ### Rate Limiting
+
 Currently no rate limiting is enforced, but it may be added in future versions.
 
 ---
@@ -566,6 +687,7 @@ Currently no rate limiting is enforced, but it may be added in future versions.
 ### Using cURL
 
 **Provider Signup:**
+
 ```bash
 curl -X POST http://localhost:3000/api/provider/signup \
   -H "Content-Type: application/json" \
@@ -579,6 +701,7 @@ curl -X POST http://localhost:3000/api/provider/signup \
 ```
 
 **Book a Session:**
+
 ```bash
 curl -X POST http://localhost:3000/api/sessions/book \
   -H "Content-Type: application/json" \
@@ -591,7 +714,9 @@ curl -X POST http://localhost:3000/api/sessions/book \
 ```
 
 ### Using Swagger UI
+
 Visit `http://localhost:3000/api/docs` to:
+
 - View all endpoints
 - Test APIs interactively
 - See request/response schemas
@@ -602,6 +727,7 @@ Visit `http://localhost:3000/api/docs` to:
 ## Support
 
 For issues or questions:
+
 - GitHub: [Your Repository URL]
 - Email: support@chargehive.com
 

@@ -1,0 +1,36 @@
+User App
+
+1. Signup/Login Page - User should be able to signup and then login
+2. Maps Page - SHow all the parking and charging spot available (Home Page)
+3. Wallet Page - Show the wallet details of the logged user
+4. History Page - Shows history of sessions booked
+
+User Functionalities
+
+1. User should be able to signup providing his email and password
+2. User must login by his Email and password
+3. In wallet page while showing token balance, have 3 buttons (Send, Receive, Transactions )
+   Send - Send tokens from one wallet to another
+   Receive - OPens QR code with address
+   Transactions - Shows all the transactions of the user wallet address
+4. On Maps page if the user has logged in then he should be able to click on C or P markings and book a charging or parking session, the booking page should also show the total amount to be paid and should be allowed to pay
+5. All the booked and completed sessions should be shown in history page.
+
+Provider App
+
+1. Signup/Login Page - Provider should be able to signup, authenticate and then login
+2. Maps Page - To show all the C and P in the MAP
+3. Wallet Page - Shows Providers Wallet details
+4. Services Page - Shows Providers C or P which he added
+5. History Page - To show Provider's C or P sessions booked by user and the amount paid.
+
+Provider Functionalities
+
+1. Provider should be able to login using his email and password
+2. Provider must be able to see all the C and P on the Maps page
+3. Provider must be able to see all his C and P added in Services Page
+4. Have a + button on services page which allows him to add new Parking or Charger service and after adding he should get successful message and it should be shown in both maps and services page
+5. In wallet page while showing token balance, have 3 buttons (Send, Receive, Transactions )
+   Send - Send tokens from one wallet to another
+   Receive - OPens QR code with address
+   Transactions - Shows all the transactions of the user wallet address

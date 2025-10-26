@@ -27,36 +27,105 @@ export class PaymentsService {
 
   /**
    * Initiates a Flow token payment
-   * Calculates Flow amount and creates a pending payment record
+   * Creates session first, then calculates Flow amount and creates a pending payment record
    */
   async initiateFlowPayment(
-    sessionId: string,
+    serviceId: string,
+    fromDatetime: string,
+    toDatetime: string,
     userId: string,
   ): Promise<InitiatePaymentResponseDto> {
-    this.logger.log(`Initiating Flow payment for session ${sessionId} by user ${userId}`);
+    this.logger.log(`Initiating Flow payment for service ${serviceId} by user ${userId}`);
 
-    // 1. Fetch session details
-    const { data: session, error: sessionError } = await this.supabaseService.userClient
-      .from('sessions')
-      .select('*')
-      .eq('session_id', sessionId)
-      .eq('user_id', userId)
+    // 1. Validate datetime range
+    const fromDate = new Date(fromDatetime);
+    const toDate = new Date(toDatetime);
+
+    if (fromDate >= toDate) {
+      throw new BadRequestException('From datetime must be before to datetime');
+    }
+
+    if (fromDate < new Date()) {
+      throw new BadRequestException('Cannot book a session in the past');
+    }
+
+    // 2. Fetch service details
+    const { data: service, error: serviceError } = await this.supabaseService.userClient
+      .from('services')
+      .select('service_id, provider_id, status, hourly_rate')
+      .eq('service_id', serviceId)
       .single();
 
+    if (serviceError || !service) {
+      throw new NotFoundException('Service not found');
+    }
+
+    // 3. Check if service status is 'available' or 'active'
+    if (service.status !== 'available' && service.status !== 'active') {
+      throw new BadRequestException(
+        `Service is not available for booking. Current status: ${service.status}`,
+      );
+    }
+
+    // 4. Check for overlapping sessions
+    const { data: overlappingSessions, error: overlapError } =
+      await this.supabaseService.userClient
+        .from('sessions')
+        .select('session_id')
+        .eq('service_id', serviceId)
+        .or(
+          `and(from_datetime.lte.${toDatetime},to_datetime.gte.${fromDatetime})`,
+        );
+
+    if (overlapError) {
+      this.logger.error('Failed to check overlapping sessions', overlapError);
+      throw new BadRequestException(
+        `Failed to check availability: ${overlapError.message}`,
+      );
+    }
+
+    if (overlappingSessions && overlappingSessions.length > 0) {
+      throw new BadRequestException(
+        'This service is already booked for the selected time slot. Please choose a different time.',
+      );
+    }
+
+    // 5. Calculate total amount
+    const durationInHours =
+      (toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60);
+    const hourlyRate = parseFloat(service.hourly_rate || '10');
+    const amountUsd = parseFloat((durationInHours * hourlyRate).toFixed(2));
+
+    // 6. Create the session
+    const { data: session, error: sessionError } =
+      await this.supabaseService.userClient
+        .from('sessions')
+        .insert({
+          user_id: userId,
+          provider_id: service.provider_id,
+          service_id: serviceId,
+          from_datetime: fromDatetime,
+          to_datetime: toDatetime,
+          total_amount: amountUsd,
+          payment_status: 'unpaid',
+        })
+        .select()
+        .single();
+
     if (sessionError || !session) {
-      throw new NotFoundException('Session not found or does not belong to user');
+      this.logger.error('Failed to create session', sessionError);
+      throw new BadRequestException(
+        `Failed to create session: ${sessionError?.message}`,
+      );
     }
 
-    // 2. Check if session is already paid
-    if (session.payment_status === 'paid') {
-      throw new BadRequestException('This session has already been paid for');
-    }
+    this.logger.log(`Session created: ${session.session_id}`);
 
-    // 3. Check if there's already a pending payment for this session
+    // 7. Check if there's already a pending payment for this session
     const { data: existingPayment } = await this.supabaseService.userClient
       .from('payments')
       .select('*')
-      .eq('session_id', sessionId)
+      .eq('session_id', session.session_id)
       .eq('status', 'pending')
       .single();
 
@@ -111,22 +180,21 @@ export class PaymentsService {
       );
     }
 
-    // 6. Get current Flow token price
+    // 8. Get current Flow token price
     const flowPrice = await this.priceService.getFlowPriceInUSD();
 
-    // 7. Calculate Flow token amount
-    const amountUsd = parseFloat(session.total_amount);
+    // 9. Calculate Flow token amount
     const flowTokenAmount = this.priceService.calculateFlowAmount(amountUsd, flowPrice);
 
     this.logger.log(
       `Payment calculation: $${amountUsd} = ${flowTokenAmount} FLOW @ $${flowPrice}/FLOW`,
     );
 
-    // 8. Create payment record
+    // 10. Create payment record
     const { data: payment, error: paymentError } = await this.supabaseService.userClient
       .from('payments')
       .insert({
-        session_id: sessionId,
+        session_id: session.session_id,
         user_id: userId,
         provider_id: session.provider_id,
         payment_method: 'flow_token',

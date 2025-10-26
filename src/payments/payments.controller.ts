@@ -38,7 +38,9 @@ export class PaymentsController {
   ) {
     const userId = req.user.id;
     const result = await this.paymentsService.initiateFlowPayment(
-      initiateDto.sessionId,
+      initiateDto.serviceId,
+      initiateDto.fromDatetime,
+      initiateDto.toDatetime,
       userId,
     );
 

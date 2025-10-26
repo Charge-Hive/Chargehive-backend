@@ -1,7 +1,15 @@
-import { IsUUID, IsNotEmpty } from 'class-validator';
+import { IsUUID, IsNotEmpty, IsDateString } from 'class-validator';
 
 export class InitiateFlowPaymentDto {
   @IsUUID()
   @IsNotEmpty()
-  sessionId: string;
+  serviceId: string;
+
+  @IsDateString()
+  @IsNotEmpty()
+  fromDatetime: string;
+
+  @IsDateString()
+  @IsNotEmpty()
+  toDatetime: string;
 }

@@ -96,36 +96,14 @@ export class PaymentsService {
     const hourlyRate = parseFloat(service.hourly_rate || '10');
     const amountUsd = parseFloat((durationInHours * hourlyRate).toFixed(2));
 
-    // 6. Create the session
-    const { data: session, error: sessionError } =
-      await this.supabaseService.userClient
-        .from('sessions')
-        .insert({
-          user_id: userId,
-          provider_id: service.provider_id,
-          service_id: serviceId,
-          from_datetime: fromDatetime,
-          to_datetime: toDatetime,
-          total_amount: amountUsd,
-          payment_status: 'unpaid',
-        })
-        .select()
-        .single();
-
-    if (sessionError || !session) {
-      this.logger.error('Failed to create session', sessionError);
-      throw new BadRequestException(
-        `Failed to create session: ${sessionError?.message}`,
-      );
-    }
-
-    this.logger.log(`Session created: ${session.session_id}`);
-
-    // 7. Check if there's already a pending payment for this session
+    // 6. Check if there's already a pending payment for this service + time slot
     const { data: existingPayment } = await this.supabaseService.userClient
       .from('payments')
       .select('*')
-      .eq('session_id', session.session_id)
+      .eq('service_id', serviceId)
+      .eq('user_id', userId)
+      .eq('from_datetime', fromDatetime)
+      .eq('to_datetime', toDatetime)
       .eq('status', 'pending')
       .single();
 
@@ -146,11 +124,11 @@ export class PaymentsService {
       };
     }
 
-    // 4. Fetch provider details to get wallet address
+    // 7. Fetch provider details to get wallet address
     const { data: provider, error: providerError } = await this.supabaseService.providerClient
       .from('providers')
       .select('wallet_address')
-      .eq('id', session.provider_id)
+      .eq('id', service.provider_id)
       .single();
 
     if (providerError || !provider) {
@@ -190,13 +168,16 @@ export class PaymentsService {
       `Payment calculation: $${amountUsd} = ${flowTokenAmount} FLOW @ $${flowPrice}/FLOW`,
     );
 
-    // 10. Create payment record
+    // 10. Create payment record WITHOUT session (session created after payment)
     const { data: payment, error: paymentError } = await this.supabaseService.userClient
       .from('payments')
       .insert({
-        session_id: session.session_id,
+        session_id: null, // Session will be created when payment is executed
         user_id: userId,
-        provider_id: session.provider_id,
+        provider_id: service.provider_id,
+        service_id: serviceId, // Store booking details in payment
+        from_datetime: fromDatetime,
+        to_datetime: toDatetime,
         payment_method: 'flow_token',
         amount_usd: amountUsd,
         flow_token_amount: flowTokenAmount,
@@ -283,11 +264,35 @@ export class PaymentsService {
       throw new BadRequestException('Sender wallet address does not match payment record');
     }
 
-    // 5. Update payment with transaction hash
+    // 5. Create the session NOW (after payment is being executed)
+    const { data: session, error: sessionError } = await this.supabaseService.userClient
+      .from('sessions')
+      .insert({
+        user_id: payment.user_id,
+        provider_id: payment.provider_id,
+        service_id: payment.service_id,
+        from_datetime: payment.from_datetime,
+        to_datetime: payment.to_datetime,
+        total_amount: payment.amount_usd,
+        payment_id: paymentId,
+        payment_status: 'paid',
+      })
+      .select()
+      .single();
+
+    if (sessionError || !session) {
+      this.logger.error('Failed to create session', sessionError);
+      throw new BadRequestException(`Failed to create session: ${sessionError?.message}`);
+    }
+
+    this.logger.log(`Session created: ${session.session_id}`);
+
+    // 6. Update payment with transaction hash and session_id
     const { error: updateError } = await this.supabaseService.userClient
       .from('payments')
       .update({
         transaction_hash: transactionHash,
+        session_id: session.session_id,
         status: 'completed', // In production, this would be 'pending' until blockchain verification
       })
       .eq('payment_id', paymentId);
@@ -295,19 +300,6 @@ export class PaymentsService {
     if (updateError) {
       this.logger.error('Failed to update payment', updateError);
       throw new BadRequestException(`Failed to execute payment: ${updateError.message}`);
-    }
-
-    // 6. Update session payment status
-    const { error: sessionUpdateError } = await this.supabaseService.userClient
-      .from('sessions')
-      .update({
-        payment_id: paymentId,
-        payment_status: 'paid',
-      })
-      .eq('session_id', payment.session_id);
-
-    if (sessionUpdateError) {
-      this.logger.error('Failed to update session payment status', sessionUpdateError);
     }
 
     this.logger.log(`Payment ${paymentId} executed successfully`);

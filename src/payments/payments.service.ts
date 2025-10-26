@@ -316,7 +316,7 @@ export class PaymentsService {
       throw new BadRequestException(`Failed to fetch payment history: ${error.message}`);
     }
 
-    return payments.map((payment) => ({
+    return payments.map((payment: any) => ({
       paymentId: payment.payment_id,
       sessionId: payment.session_id,
       providerId: payment.provider_id,
@@ -374,7 +374,7 @@ export class PaymentsService {
     let completedPayments = 0;
     let pendingPayments = 0;
 
-    const paymentDtos: ProviderEarningsDto[] = payments.map((payment) => {
+    const paymentDtos: ProviderEarningsDto[] = payments.map((payment: any) => {
       const amountUsd = parseFloat(payment.amount_usd);
       const flowAmount = payment.flow_token_amount ? parseFloat(payment.flow_token_amount) : 0;
 

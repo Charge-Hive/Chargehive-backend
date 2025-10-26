@@ -60,11 +60,16 @@ export class WalletController {
     @Body() sendDto: { toAddress: string; amount: string },
   ) {
     const walletAddress = await this.getWalletAddressFromUser(req.user);
-    return this.walletService.sendFlowTokens(
+    const result = await this.walletService.sendFlowTokens(
       walletAddress,
       sendDto.toAddress,
       sendDto.amount,
     );
+
+    return {
+      success: true,
+      data: result,
+    };
   }
 
   /**

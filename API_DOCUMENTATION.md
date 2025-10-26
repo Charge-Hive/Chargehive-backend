@@ -15,7 +15,8 @@ DEV ENDPOINT IN HEROKU - https://chargehive-backend-dev-c567e0fd7ba7.herokuapp.c
 3. [User APIs](#user-apis)
 4. [Services APIs](#services-apis)
 5. [Sessions APIs](#sessions-apis)
-6. [Error Responses](#error-responses)
+6. [Payments APIs](#payments-apis)
+7. [Error Responses](#error-responses)
 
 ---
 
@@ -582,6 +583,434 @@ Authorization: Bearer <user-jwt-token>
   ]
 }
 ```
+
+---
+
+## Payments APIs
+
+### 1. Initiate Flow Payment
+
+**Endpoint:** `POST /api/payments/initiateFlow`
+**Description:** Start a Flow token payment for a booked session. Calculates the Flow token amount based on current market price and creates a pending payment record.
+**Authentication:** Required (User)
+
+**Request Headers:**
+
+```
+Authorization: Bearer <user-jwt-token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "sessionId": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Flow payment initiated successfully",
+  "data": {
+    "paymentId": "payment-uuid",
+    "amountUsd": 30.50,
+    "flowTokenAmount": 46.92307692,
+    "flowTokenPriceUsd": 0.65,
+    "providerWalletAddress": "0x1234567890abcdef",
+    "expiresAt": "2025-10-26T12:15:00Z"
+  }
+}
+```
+
+**Field Descriptions:**
+
+- `paymentId`: UUID of the created payment record
+- `amountUsd`: Total amount in USD (from session.total_amount)
+- `flowTokenAmount`: Calculated Flow tokens to send (amountUsd / flowTokenPriceUsd)
+- `flowTokenPriceUsd`: Current Flow token price locked for this payment
+- `providerWalletAddress`: Provider's Flow wallet address to send tokens to
+- `expiresAt`: Payment expiration time (15 minutes from creation)
+
+**Error Responses:**
+
+**Session Not Found (404):**
+
+```json
+{
+  "message": "Session not found or does not belong to user",
+  "error": "Not Found",
+  "statusCode": 404
+}
+```
+
+**Session Already Paid (400):**
+
+```json
+{
+  "message": "This session has already been paid for",
+  "error": "Bad Request",
+  "statusCode": 400
+}
+```
+
+**Provider No Wallet (400):**
+
+```json
+{
+  "message": "Provider has not set up a Flow wallet. Please contact the provider or use card payment.",
+  "error": "Bad Request",
+  "statusCode": 400
+}
+```
+
+**User No Wallet (400):**
+
+```json
+{
+  "message": "You have not set up a Flow wallet. Please add your wallet address in settings.",
+  "error": "Bad Request",
+  "statusCode": 400
+}
+```
+
+---
+
+### 2. Execute Flow Payment
+
+**Endpoint:** `POST /api/payments/executeFlow`
+**Description:** Submit the blockchain transaction hash after sending Flow tokens. This completes the payment and marks the session as paid.
+**Authentication:** Required (User)
+
+**Request Headers:**
+
+```
+Authorization: Bearer <user-jwt-token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "paymentId": "payment-uuid",
+  "transactionHash": "0xabcdef1234567890...",
+  "senderWalletAddress": "0xuser-wallet-address"
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Payment completed successfully",
+  "data": {
+    "paymentId": "payment-uuid",
+    "status": "completed"
+  }
+}
+```
+
+**Error Responses:**
+
+**Payment Not Found (404):**
+
+```json
+{
+  "message": "Payment not found or does not belong to user",
+  "error": "Not Found",
+  "statusCode": 404
+}
+```
+
+**Payment Already Completed (400):**
+
+```json
+{
+  "message": "This payment has already been completed",
+  "error": "Bad Request",
+  "statusCode": 400
+}
+```
+
+**Payment Expired (400):**
+
+```json
+{
+  "message": "Payment has expired. Please initiate a new payment.",
+  "error": "Bad Request",
+  "statusCode": 400
+}
+```
+
+**Wallet Mismatch (400):**
+
+```json
+{
+  "message": "Sender wallet address does not match payment record",
+  "error": "Bad Request",
+  "statusCode": 400
+}
+```
+
+---
+
+### 3. Get Payment Status
+
+**Endpoint:** `GET /api/payments/:paymentId/status`
+**Description:** Check the current status of a payment
+**Authentication:** Required (User)
+
+**Request Headers:**
+
+```
+Authorization: Bearer <user-jwt-token>
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "paymentId": "payment-uuid",
+    "status": "completed",
+    "transactionHash": "0xabcdef1234567890...",
+    "verifiedAt": "2025-10-26T12:05:00Z"
+  }
+}
+```
+
+**Status Values:**
+
+- `pending`: Payment initiated but not yet executed
+- `completed`: Payment successful and verified
+- `failed`: Payment failed or expired
+- `refunded`: Payment was refunded
+
+---
+
+### 4. Get User Payment History
+
+**Endpoint:** `GET /api/payments/user`
+**Description:** Retrieve all payments made by the authenticated user
+**Authentication:** Required (User)
+
+**Request Headers:**
+
+```
+Authorization: Bearer <user-jwt-token>
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "count": 2,
+    "payments": [
+      {
+        "paymentId": "payment-uuid-1",
+        "sessionId": "session-uuid-1",
+        "providerId": "provider-uuid",
+        "paymentMethod": "flow_token",
+        "amountUsd": 30.50,
+        "flowTokenAmount": 46.92307692,
+        "flowTokenPriceUsd": 0.65,
+        "status": "completed",
+        "transactionHash": "0xabcdef1234567890...",
+        "createdAt": "2025-10-26T12:00:00Z",
+        "updatedAt": "2025-10-26T12:05:00Z",
+        "serviceType": "parking",
+        "serviceAddress": "123 Main Street",
+        "fromDatetime": "2025-10-26T14:00:00Z",
+        "toDatetime": "2025-10-26T16:00:00Z"
+      },
+      {
+        "paymentId": "payment-uuid-2",
+        "sessionId": "session-uuid-2",
+        "providerId": "provider-uuid-2",
+        "paymentMethod": "flow_token",
+        "amountUsd": 20.00,
+        "flowTokenAmount": 30.76923077,
+        "flowTokenPriceUsd": 0.65,
+        "status": "completed",
+        "transactionHash": "0x9876543210fedcba...",
+        "createdAt": "2025-10-25T10:00:00Z",
+        "updatedAt": "2025-10-25T10:03:00Z",
+        "serviceType": "charger",
+        "serviceAddress": "456 Oak Avenue",
+        "fromDatetime": "2025-10-25T12:00:00Z",
+        "toDatetime": "2025-10-25T14:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 5. Get Provider Earnings
+
+**Endpoint:** `GET /api/payments/provider`
+**Description:** Retrieve all earnings and payment details for the authenticated provider
+**Authentication:** Required (Provider)
+
+**Request Headers:**
+
+```
+Authorization: Bearer <provider-jwt-token>
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "totalEarningsUsd": 150.50,
+    "totalFlowTokens": 231.53846154,
+    "completedPayments": 5,
+    "pendingPayments": 1,
+    "payments": [
+      {
+        "paymentId": "payment-uuid-1",
+        "sessionId": "session-uuid-1",
+        "userId": "user-uuid-1",
+        "paymentMethod": "flow_token",
+        "amountUsd": 30.50,
+        "flowTokenAmount": 46.92307692,
+        "status": "completed",
+        "transactionHash": "0xabcdef1234567890...",
+        "createdAt": "2025-10-26T12:00:00Z",
+        "serviceType": "parking",
+        "fromDatetime": "2025-10-26T14:00:00Z",
+        "toDatetime": "2025-10-26T16:00:00Z"
+      },
+      {
+        "paymentId": "payment-uuid-2",
+        "sessionId": "session-uuid-2",
+        "userId": "user-uuid-2",
+        "paymentMethod": "flow_token",
+        "amountUsd": 120.00,
+        "flowTokenAmount": 184.61538462,
+        "status": "completed",
+        "transactionHash": "0x1111222233334444...",
+        "createdAt": "2025-10-25T08:00:00Z",
+        "serviceType": "charger",
+        "fromDatetime": "2025-10-25T10:00:00Z",
+        "toDatetime": "2025-10-25T16:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+**Field Descriptions:**
+
+- `totalEarningsUsd`: Sum of all completed payments in USD
+- `totalFlowTokens`: Sum of all Flow tokens received from completed payments
+- `completedPayments`: Count of successfully completed payments
+- `pendingPayments`: Count of payments awaiting completion
+
+---
+
+### Payment Flow Example
+
+**Step 1: User books a session**
+
+```bash
+POST /api/sessions/book
+{
+  "serviceId": "service-uuid",
+  "fromDatetime": "2025-10-26T14:00:00Z",
+  "toDatetime": "2025-10-26T16:00:00Z"
+}
+# Response: sessionId, totalAmount: $30.50
+```
+
+**Step 2: User initiates Flow payment**
+
+```bash
+POST /api/payments/initiateFlow
+{
+  "sessionId": "session-uuid"
+}
+# Response:
+# - paymentId
+# - flowTokenAmount: 46.92 FLOW
+# - providerWalletAddress: 0x...
+# - Price locked: $0.65/FLOW
+# - Expires in 15 minutes
+```
+
+**Step 3: User sends Flow tokens via wallet**
+
+User uses their Flow wallet (Blocto, Lilico, etc.) to send 46.92 FLOW tokens to the provider's wallet address.
+
+**Step 4: User submits transaction hash**
+
+```bash
+POST /api/payments/executeFlow
+{
+  "paymentId": "payment-uuid",
+  "transactionHash": "0xabcdef...",
+  "senderWalletAddress": "0xuser-wallet"
+}
+# Response: status "completed"
+# Session is now marked as "paid"
+```
+
+**Step 5: Check payment status (optional)**
+
+```bash
+GET /api/payments/payment-uuid/status
+# Response: status, transactionHash, verifiedAt
+```
+
+---
+
+### Important Notes
+
+**Flow Token Price:**
+
+- Fetched from CoinGecko API in real-time
+- Cached for 1 minute to reduce API calls
+- Price is locked when payment is initiated
+- User has 15 minutes to complete payment at locked price
+
+**Payment Expiration:**
+
+- Payments expire 15 minutes after initiation
+- Expired payments are automatically marked as "failed"
+- User must initiate a new payment to try again
+
+**Wallet Requirements:**
+
+- Both user and provider must have Flow wallet addresses set up
+- User wallet address is stored in `users.wallet_address`
+- Provider wallet address is stored in `providers.wallet_address`
+
+**Blockchain Verification:**
+
+- Current implementation marks payment as "completed" immediately
+- Production version should verify transaction on Flow blockchain
+- Verification should check:
+  - Transaction exists and is sealed
+  - Correct amount sent
+  - Correct sender and receiver addresses
+
+**Testing on Flow Testnet:**
+
+Use Flow Testnet for development:
+- Get testnet FLOW from faucet
+- Configure Flow testnet network in wallet
+- Provider must share testnet wallet address
 
 ---
 

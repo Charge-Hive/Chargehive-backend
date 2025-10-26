@@ -22,7 +22,12 @@ export class WalletController {
   @Get()
   async getWalletDetails(@Req() req: any) {
     const walletAddress = await this.getWalletAddressFromUser(req.user);
-    return this.walletService.getWalletDetails(walletAddress);
+    const walletDetails = await this.walletService.getWalletDetails(walletAddress);
+
+    return {
+      success: true,
+      data: walletDetails,
+    };
   }
 
   /**
@@ -36,7 +41,12 @@ export class WalletController {
   ) {
     const walletAddress = await this.getWalletAddressFromUser(req.user);
     const txLimit = limit ? parseInt(limit, 10) : 10;
-    return this.walletService.getWalletTransactions(walletAddress, txLimit);
+    const transactions = await this.walletService.getWalletTransactions(walletAddress, txLimit);
+
+    return {
+      success: true,
+      data: transactions.transactions || [],
+    };
   }
 
   /**

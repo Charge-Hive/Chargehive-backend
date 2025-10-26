@@ -46,8 +46,8 @@ export class SessionsService {
         throw new NotFoundException('Service not found');
       }
 
-      // Step 2: Check if service status is 'available'
-      if (service.status !== 'available') {
+      // Step 2: Check if service status is 'available' or 'active'
+      if (service.status !== 'available' && service.status !== 'active') {
         throw new BadRequestException(
           `Service is not available for booking. Current status: ${service.status}`,
         );

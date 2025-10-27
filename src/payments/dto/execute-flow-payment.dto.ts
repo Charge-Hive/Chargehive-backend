@@ -1,4 +1,4 @@
-import { IsUUID, IsNotEmpty, IsString } from 'class-validator';
+import { IsUUID, IsNotEmpty, IsString, IsOptional } from 'class-validator';
 
 export class ExecuteFlowPaymentDto {
   @IsUUID()
@@ -6,8 +6,8 @@ export class ExecuteFlowPaymentDto {
   paymentId: string;
 
   @IsString()
-  @IsNotEmpty()
-  transactionHash: string;
+  @IsOptional()
+  transactionHash?: string;
 
   @IsString()
   @IsNotEmpty()

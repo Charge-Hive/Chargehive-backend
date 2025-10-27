@@ -249,17 +249,17 @@ export class PaymentsService {
   }
 
   /**
-   * Executes a Flow payment by recording the transaction hash
-   * In a production system, this would trigger blockchain verification
+   * Executes a Flow payment by sending actual blockchain transaction
+   * Backend generates the transaction hash by sending FLOW tokens
    */
   async executeFlowPayment(
     paymentId: string,
-    transactionHash: string,
+    transactionHash: string | undefined,
     senderWalletAddress: string,
     userId: string
   ): Promise<ExecutePaymentResponseDto> {
     this.logger.log(
-      `Executing Flow payment ${paymentId} with tx hash ${transactionHash}`
+      `Executing Flow payment ${paymentId} for user ${userId}`
     );
 
     // 1. Fetch payment record

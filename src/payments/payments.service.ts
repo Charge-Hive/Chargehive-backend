@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { SupabaseService } from "../supabase/supabase.service";
 import { PriceService } from "../prices/price.service";
+import { WalletService } from "../wallet/wallet.service";
 import {
   InitiatePaymentResponseDto,
   ExecutePaymentResponseDto,
@@ -22,7 +23,8 @@ export class PaymentsService {
 
   constructor(
     private supabaseService: SupabaseService,
-    private priceService: PriceService
+    private priceService: PriceService,
+    private walletService: WalletService
   ) {}
 
   /**
@@ -71,14 +73,14 @@ export class PaymentsService {
     }
 
     // 4. Check for overlapping sessions
+    // A session overlaps if: (new_start < existing_end) AND (new_end > existing_start)
     const { data: overlappingSessions, error: overlapError } =
       await this.supabaseService.userClient
         .from("sessions")
         .select("session_id")
         .eq("service_id", serviceId)
-        .or(
-          `and(from_datetime.lte.${toDatetime},to_datetime.gte.${fromDatetime})`
-        );
+        .lt("from_datetime", toDatetime)
+        .gt("to_datetime", fromDatetime);
 
     if (overlapError) {
       this.logger.error("Failed to check overlapping sessions", overlapError);
@@ -287,7 +289,36 @@ export class PaymentsService {
       );
     }
 
-    // 5. Create the session NOW (after payment is being executed)
+    // 5. Actually send Flow tokens on blockchain from user to provider
+    let blockchainTransactionId: string;
+    try {
+      this.logger.log(
+        `Sending ${payment.flow_token_amount} FLOW from ${payment.sender_wallet_address} to ${payment.receiver_wallet_address}`
+      );
+
+      const txResult = await this.walletService.sendFlowTokens(
+        payment.sender_wallet_address,
+        payment.receiver_wallet_address,
+        payment.flow_token_amount.toString()
+      );
+
+      blockchainTransactionId = txResult.transactionId;
+      this.logger.log(`Blockchain transaction successful: ${blockchainTransactionId}`);
+    } catch (error) {
+      this.logger.error("Blockchain transaction failed", error);
+
+      // Mark payment as failed
+      await this.supabaseService.userClient
+        .from("payments")
+        .update({ status: "failed" })
+        .eq("payment_id", paymentId);
+
+      throw new BadRequestException(
+        `Failed to send FLOW tokens on blockchain: ${error.message}`
+      );
+    }
+
+    // 6. Create the session NOW (after blockchain payment is successful)
     const { data: session, error: sessionError } =
       await this.supabaseService.userClient
         .from("sessions")
@@ -313,13 +344,13 @@ export class PaymentsService {
 
     this.logger.log(`Session created: ${session.session_id}`);
 
-    // 6. Update payment with transaction hash and session_id
+    // 7. Update payment with REAL blockchain transaction hash and session_id
     const { error: updateError } = await this.supabaseService.userClient
       .from("payments")
       .update({
-        transaction_hash: transactionHash,
+        transaction_hash: blockchainTransactionId, // Real blockchain transaction ID
         session_id: session.session_id,
-        status: "completed", // In production, this would be 'pending' until blockchain verification
+        status: "completed", // Payment successful, blockchain transaction confirmed
       })
       .eq("payment_id", paymentId);
 
@@ -330,10 +361,7 @@ export class PaymentsService {
       );
     }
 
-    this.logger.log(`Payment ${paymentId} executed successfully`);
-
-    // Note: In production, you would trigger a background job here to verify the transaction on the blockchain
-    // For now, we're marking it as completed immediately
+    this.logger.log(`Payment ${paymentId} executed successfully with blockchain tx: ${blockchainTransactionId}`);
 
     return {
       paymentId,

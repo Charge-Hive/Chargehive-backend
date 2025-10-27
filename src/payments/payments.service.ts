@@ -74,16 +74,38 @@ export class PaymentsService {
 
     // 4. Check for overlapping sessions
     // A session overlaps if: (new_start < existing_end) AND (new_end > existing_start)
+    this.logger.log(`[OVERLAP CHECK] Starting overlap check`);
+    this.logger.log(`[OVERLAP CHECK] serviceId: ${serviceId}`);
+    this.logger.log(`[OVERLAP CHECK] fromDatetime: ${fromDatetime}`);
+    this.logger.log(`[OVERLAP CHECK] toDatetime: ${toDatetime}`);
+
+    // First, get ALL sessions for this service to see what's in the database
+    const { data: allSessions } = await this.supabaseService.userClient
+      .from("sessions")
+      .select("*")
+      .eq("service_id", serviceId);
+
+    this.logger.log(`[OVERLAP CHECK] Total sessions for service ${serviceId}: ${allSessions?.length || 0}`);
+    if (allSessions && allSessions.length > 0) {
+      this.logger.log(`[OVERLAP CHECK] All sessions:`, JSON.stringify(allSessions, null, 2));
+    }
+
+    // Now check for overlapping sessions
     const { data: overlappingSessions, error: overlapError } =
       await this.supabaseService.userClient
         .from("sessions")
-        .select("session_id")
+        .select("session_id, from_datetime, to_datetime")
         .eq("service_id", serviceId)
-        .lt("from_datetime", toDatetime)
-        .gt("to_datetime", fromDatetime);
+        .filter("from_datetime", "lt", toDatetime)
+        .filter("to_datetime", "gt", fromDatetime);
+
+    this.logger.log(`[OVERLAP CHECK] Overlapping sessions found: ${overlappingSessions?.length || 0}`);
+    if (overlappingSessions && overlappingSessions.length > 0) {
+      this.logger.log(`[OVERLAP CHECK] Overlapping session details:`, JSON.stringify(overlappingSessions, null, 2));
+    }
 
     if (overlapError) {
-      this.logger.error("Failed to check overlapping sessions", overlapError);
+      this.logger.error("[OVERLAP CHECK] Error checking overlaps:", overlapError);
       throw new BadRequestException(
         `Failed to check availability: ${overlapError.message}`
       );
@@ -94,6 +116,8 @@ export class PaymentsService {
         "This service is already booked for the selected time slot. Please choose a different time."
       );
     }
+
+    this.logger.log(`[OVERLAP CHECK] No overlaps found - proceeding with payment initiation`);
 
     // 5. Calculate total amount
     const durationInHours =

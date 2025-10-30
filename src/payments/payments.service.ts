@@ -7,6 +7,7 @@ import {
 import { SupabaseService } from "../supabase/supabase.service";
 import { PriceService } from "../prices/price.service";
 import { WalletService } from "../wallet/wallet.service";
+import { FlowService } from "../flow/flow.service";
 import {
   InitiatePaymentResponseDto,
   ExecutePaymentResponseDto,
@@ -24,7 +25,8 @@ export class PaymentsService {
   constructor(
     private supabaseService: SupabaseService,
     private priceService: PriceService,
-    private walletService: WalletService
+    private walletService: WalletService,
+    private flowService: FlowService
   ) {}
 
   /**
@@ -342,7 +344,71 @@ export class PaymentsService {
       );
     }
 
-    // 6. Create the session NOW (after blockchain payment is successful)
+    // 6. Check if this is a charger service and create adapter booking if needed
+    let adapterBookingId: string | undefined;
+    let adapterTransactionId: string | undefined;
+
+    // Fetch service details to check if it's a charger
+    const { data: service, error: serviceError } =
+      await this.supabaseService.userClient
+        .from("services")
+        .select("service_type, service_id")
+        .eq("service_id", payment.service_id)
+        .single();
+
+    if (serviceError) {
+      this.logger.error("Failed to fetch service details", serviceError);
+      throw new BadRequestException(
+        `Failed to fetch service: ${serviceError.message}`
+      );
+    }
+
+    const isCharger = service.service_type === "charger";
+    this.logger.log(`[ADAPTER CHECK] Service type: ${service.service_type}, isCharger: ${isCharger}`);
+
+    if (isCharger) {
+      try {
+        // Get adapter ID from environment variable
+        const adapterId = process.env.ADAPTER_ID;
+
+        if (!adapterId) {
+          throw new BadRequestException(
+            "Adapter ID not configured. Please set ADAPTER_ID in environment variables."
+          );
+        }
+
+        // Convert from_datetime to Unix timestamp (seconds)
+        const fromDate = new Date(payment.from_datetime);
+        const scheduledTimeUnix = Math.floor(fromDate.getTime() / 1000);
+
+        this.logger.log(
+          `[ADAPTER BOOKING] Creating CHAdapter booking - Adapter: ${adapterId}, User: ${payment.sender_wallet_address}, Time: ${scheduledTimeUnix}`
+        );
+
+        // Create booking on CHAdapter contract
+        const bookingResult = await this.flowService.createAdapterBooking(
+          adapterId,
+          payment.sender_wallet_address,
+          scheduledTimeUnix
+        );
+
+        adapterBookingId = bookingResult.bookingId;
+        adapterTransactionId = bookingResult.transactionId;
+
+        this.logger.log(
+          `[ADAPTER BOOKING] ✓ CHAdapter booking created: ${adapterBookingId}, Tx: ${adapterTransactionId}`
+        );
+      } catch (error) {
+        this.logger.error("[ADAPTER BOOKING] Failed to create CHAdapter booking", error);
+        // Don't throw - allow session to be created without adapter booking
+        // Log the error for debugging
+        this.logger.warn(
+          `[ADAPTER BOOKING] Continuing without adapter booking due to error: ${error.message}`
+        );
+      }
+    }
+
+    // 7. Create the session NOW (after blockchain payment is successful and adapter booking if needed)
     this.logger.log(`[SESSION CREATE] Creating session for payment ${paymentId}`);
     this.logger.log(`[SESSION CREATE] Session data:`, {
       user_id: payment.user_id,
@@ -353,6 +419,7 @@ export class PaymentsService {
       total_amount: payment.amount_usd,
       payment_id: paymentId,
       payment_status: "paid",
+      adapter_booking_id: adapterBookingId || null,
     });
 
     const { data: session, error: sessionError } =
@@ -386,7 +453,7 @@ export class PaymentsService {
 
     this.logger.log(`[SESSION CREATE] ✅ Session created successfully: ${session.session_id}`);
 
-    // 7. Update payment with REAL blockchain transaction hash and session_id
+    // 8. Update payment with REAL blockchain transaction hash and session_id
     const { error: updateError } = await this.supabaseService.userClient
       .from("payments")
       .update({
@@ -405,10 +472,24 @@ export class PaymentsService {
 
     this.logger.log(`Payment ${paymentId} executed successfully with blockchain tx: ${blockchainTransactionId}`);
 
+    // Log adapter booking info if it's a charger
+    if (isCharger && adapterBookingId) {
+      this.logger.log(
+        `✓ Charger booking complete - Session: ${session.session_id}, Adapter Booking ID: ${adapterBookingId}, Adapter Tx: ${adapterTransactionId}`
+      );
+    }
+
     return {
       paymentId,
       status: "completed",
-      message: "Payment completed successfully",
+      message: isCharger && adapterBookingId
+        ? "Payment completed successfully. Charger has been booked on the adapter."
+        : "Payment completed successfully",
+      ...(isCharger && adapterBookingId && {
+        adapterBookingId,
+        adapterTransactionId,
+        adapterId: process.env.ADAPTER_ID,
+      }),
     };
   }
 

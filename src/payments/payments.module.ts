@@ -4,9 +4,10 @@ import { PaymentsService } from './payments.service';
 import { PriceService } from '../prices/price.service';
 import { SupabaseModule } from '../supabase/supabase.module';
 import { WalletModule } from '../wallet/wallet.module';
+import { FlowModule } from '../flow/flow.module';
 
 @Module({
-  imports: [SupabaseModule, WalletModule],
+  imports: [SupabaseModule, WalletModule, FlowModule],
   controllers: [PaymentsController],
   providers: [PaymentsService, PriceService],
   exports: [PaymentsService, PriceService],

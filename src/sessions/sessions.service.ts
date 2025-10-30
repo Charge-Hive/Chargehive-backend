@@ -5,13 +5,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
+import { FlowService } from '../flow/flow.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 
 @Injectable()
 export class SessionsService {
   private readonly logger = new Logger(SessionsService.name);
 
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(
+    private supabaseService: SupabaseService,
+    private flowService: FlowService,
+  ) {}
 
   async createSession(userId: string, createSessionDto: CreateSessionDto) {
     const { serviceId, fromDatetime, toDatetime } = createSessionDto;
@@ -37,7 +41,7 @@ export class SessionsService {
       const { data: service, error: serviceError } =
         await this.supabaseService.chargehiveClient
           .from('services')
-          .select('service_id, provider_id, status, hourly_rate')
+          .select('service_id, provider_id, status, hourly_rate, service_type')
           .eq('service_id', serviceId)
           .single();
 
@@ -52,6 +56,10 @@ export class SessionsService {
           `Service is not available for booking. Current status: ${service.status}`,
         );
       }
+
+      // Check if this is a charger service - if so, use CHAdapter booking flow
+      const isCharger = service.service_type === 'charger';
+      this.logger.log(`Service type: ${service.service_type}, isCharger: ${isCharger}`);
 
       // Step 3: Check for overlapping sessions
       const { data: overlappingSessions, error: overlapError } =
@@ -82,18 +90,82 @@ export class SessionsService {
       const hourlyRate = parseFloat(service.hourly_rate || '10');
       const totalAmount = (durationInHours * hourlyRate).toFixed(2);
 
-      // Step 5: Create the session
+      // Step 5: Handle charger booking with CHAdapter contract
+      let adapterBookingId: string | undefined;
+      let adapterTransactionId: string | undefined;
+
+      if (isCharger) {
+        try {
+          // Get user's wallet address
+          const { data: user, error: userError } =
+            await this.supabaseService.chargehiveClient
+              .from('users')
+              .select('wallet_address')
+              .eq('id', userId)
+              .single();
+
+          if (userError || !user || !user.wallet_address) {
+            throw new BadRequestException(
+              'User wallet address not found. Please set up your wallet first.',
+            );
+          }
+
+          // Get adapter ID from environment variable
+          const adapterId = process.env.ADAPTER_ID;
+
+          if (!adapterId) {
+            throw new BadRequestException(
+              'Adapter ID not configured. Please set ADAPTER_ID in environment variables.',
+            );
+          }
+
+          // Convert from_datetime to Unix timestamp (seconds)
+          const scheduledTimeUnix = Math.floor(fromDate.getTime() / 1000);
+
+          this.logger.log(
+            `Creating CHAdapter booking - Adapter: ${adapterId}, User: ${user.wallet_address}, Time: ${scheduledTimeUnix}`,
+          );
+
+          // Create booking on CHAdapter contract
+          const bookingResult = await this.flowService.createAdapterBooking(
+            adapterId,
+            user.wallet_address,
+            scheduledTimeUnix,
+          );
+
+          adapterBookingId = bookingResult.bookingId;
+          adapterTransactionId = bookingResult.transactionId;
+
+          this.logger.log(
+            `✓ CHAdapter booking created: ${adapterBookingId}, Tx: ${adapterTransactionId}`,
+          );
+        } catch (error) {
+          this.logger.error('Failed to create CHAdapter booking', error);
+          throw new BadRequestException(
+            `Failed to create charger booking on blockchain: ${error.message}`,
+          );
+        }
+      }
+
+      // Step 6: Create the session in database
+      const sessionData: any = {
+        user_id: userId,
+        provider_id: service.provider_id,
+        service_id: serviceId,
+        from_datetime: fromDatetime,
+        to_datetime: toDatetime,
+        total_amount: totalAmount,
+      };
+
+      // Only add adapter fields if they exist (for charger bookings)
+      // Note: These columns may not exist in the database yet
+      // if (adapterBookingId) sessionData.adapter_booking_id = adapterBookingId;
+      // if (adapterTransactionId) sessionData.adapter_transaction_id = adapterTransactionId;
+
       const { data: session, error: sessionError } =
         await this.supabaseService.chargehiveClient
           .from('sessions')
-          .insert({
-            user_id: userId,
-            provider_id: service.provider_id,
-            service_id: serviceId,
-            from_datetime: fromDatetime,
-            to_datetime: toDatetime,
-            total_amount: totalAmount,
-          })
+          .insert(sessionData)
           .select()
           .single();
 
@@ -106,7 +178,8 @@ export class SessionsService {
 
       this.logger.log(`Session created successfully: ${session.session_id}`);
 
-      return {
+      // Return response with adapter booking details for chargers
+      const response: any = {
         sessionId: session.session_id,
         userId: session.user_id,
         providerId: session.provider_id,
@@ -116,6 +189,17 @@ export class SessionsService {
         totalAmount: session.total_amount,
         createdAt: session.created_at,
       };
+
+      // Add adapter booking details if it's a charger (from blockchain, not database)
+      if (isCharger && adapterBookingId) {
+        response.adapterBookingId = adapterBookingId;
+        response.adapterTransactionId = adapterTransactionId;
+        response.adapterId = process.env.ADAPTER_ID;
+        response.message = 'Charger has been booked successfully';
+        this.logger.log(`✓ Charger booking complete - Adapter Booking ID: ${adapterBookingId}`);
+      }
+
+      return response;
     } catch (error) {
       if (
         error instanceof BadRequestException ||

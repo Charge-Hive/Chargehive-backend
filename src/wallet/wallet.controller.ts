@@ -84,6 +84,25 @@ export class WalletController {
   }
 
   /**
+   * Get CHT (ChargeHive Token) balance for user's wallet
+   * GET /api/wallet/cht-balance
+   */
+  @Get('cht-balance')
+  async getCHTBalance(@Req() req: any) {
+    const walletAddress = await this.getWalletAddressFromUser(req.user);
+    const chtBalance = await this.walletService.getCHTBalance(walletAddress);
+
+    return {
+      success: true,
+      data: {
+        address: walletAddress,
+        chtBalance: chtBalance,
+        token: 'CHT',
+      },
+    };
+  }
+
+  /**
    * Helper method to get wallet address from authenticated user
    * Works for both providers and users
    */

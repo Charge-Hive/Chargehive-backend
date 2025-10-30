@@ -32,6 +32,22 @@ export class ProviderService {
       !!this.supabaseService.providerAuthClient
     );
 
+    // Step 1: Assign shared Flow blockchain account for testing
+    // NOTE: For testing purposes, all providers share the same wallet (FLOW_ADDRESS/FLOW_PRIVATE_KEY)
+    // In production, you should uncomment the code below to create unique wallets for each provider
+
+    this.logger.log(`Assigning shared Flow account for provider: ${email}`);
+    const flowAccount: { address: string; privateKey: string } = {
+      address: this.flowService.getAccountAddress(),
+      privateKey: process.env.FLOW_PRIVATE_KEY || process.env.FLOW_SERVICE_ACCOUNT_PRIVATE_KEY,
+    };
+
+    this.logger.log(
+      `Shared Flow account assigned: ${flowAccount.address}`
+    );
+
+    /*
+    // PRODUCTION CODE: Uncomment this section to create unique wallets for each provider
     // Step 1: Create Flow blockchain account
     this.logger.log(`Creating Flow account for provider: ${email}`);
     let flowAccount: { address: string; privateKey: string };
@@ -47,6 +63,7 @@ export class ProviderService {
         `Failed to create blockchain wallet: ${error.message}`
       );
     }
+    */
 
     // Step 2: Sign up with Supabase Auth
     const { data: authData, error: authError } =

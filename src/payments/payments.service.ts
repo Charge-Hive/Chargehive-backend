@@ -343,6 +343,18 @@ export class PaymentsService {
     }
 
     // 6. Create the session NOW (after blockchain payment is successful)
+    this.logger.log(`[SESSION CREATE] Creating session for payment ${paymentId}`);
+    this.logger.log(`[SESSION CREATE] Session data:`, {
+      user_id: payment.user_id,
+      provider_id: payment.provider_id,
+      service_id: payment.service_id,
+      from_datetime: payment.from_datetime,
+      to_datetime: payment.to_datetime,
+      total_amount: payment.amount_usd,
+      payment_id: paymentId,
+      payment_status: "paid",
+    });
+
     const { data: session, error: sessionError } =
       await this.supabaseService.userClient
         .from("sessions")
@@ -359,14 +371,20 @@ export class PaymentsService {
         .select()
         .single();
 
-    if (sessionError || !session) {
-      this.logger.error("Failed to create session", sessionError);
+    if (sessionError) {
+      this.logger.error("[SESSION CREATE] Failed to create session:", sessionError);
+      this.logger.error("[SESSION CREATE] Error details:", JSON.stringify(sessionError, null, 2));
       throw new BadRequestException(
-        `Failed to create session: ${sessionError?.message}`
+        `Failed to create session: ${sessionError?.message || JSON.stringify(sessionError)}`
       );
     }
 
-    this.logger.log(`Session created: ${session.session_id}`);
+    if (!session) {
+      this.logger.error("[SESSION CREATE] Session creation returned no data");
+      throw new BadRequestException("Failed to create session: No data returned");
+    }
+
+    this.logger.log(`[SESSION CREATE] ✅ Session created successfully: ${session.session_id}`);
 
     // 7. Update payment with REAL blockchain transaction hash and session_id
     const { error: updateError } = await this.supabaseService.userClient

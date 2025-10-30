@@ -165,4 +165,34 @@ export class WalletService {
       throw new BadRequestException(`Failed to generate receive info: ${error.message}`);
     }
   }
+
+  /**
+   * Get CHT (ChargeHive Token) balance for a wallet address
+   * @param walletAddress - The Flow wallet address to query
+   * @returns CHT token balance as a string
+   */
+  async getCHTBalance(walletAddress: string): Promise<string> {
+    // Verify wallet exists
+    const { data: wallet, error } = await this.supabaseService.providerClient
+      .from('wallet_details')
+      .select('wallet_address')
+      .eq('wallet_address', walletAddress)
+      .single();
+
+    if (error || !wallet) {
+      throw new NotFoundException('Wallet not found');
+    }
+
+    try {
+      // Get CHT balance from Flow blockchain
+      const chtBalance = await this.flowService.getCHTBalance(wallet.wallet_address);
+
+      this.logger.log(`CHT Balance for ${wallet.wallet_address}: ${chtBalance} CHT`);
+
+      return chtBalance;
+    } catch (error) {
+      this.logger.error(`Failed to get CHT balance for ${wallet.wallet_address}`, error);
+      throw new BadRequestException(`Failed to get CHT balance: ${error.message}`);
+    }
+  }
 }

@@ -35,6 +35,49 @@ export class UserService {
       throw new BadRequestException(`Failed to create blockchain wallet: ${error.message}`);
     }
 
+    // Step 1.5: Fund the new account with initial FLOW tokens for storage
+    try {
+      const initialFundAmount = '0.001'; // 0.001 FLOW (minimum for storage)
+      this.logger.log(`Funding new account ${flowAccount.address} with ${initialFundAmount} FLOW`);
+
+      const serviceAccountAddress = this.flowService.getAccountAddress();
+      const serviceAccountPrivateKey = process.env.FLOW_PRIVATE_KEY || process.env.FLOW_SERVICE_ACCOUNT_PRIVATE_KEY;
+
+      await this.flowService.sendFlowTokens(
+        serviceAccountAddress,
+        serviceAccountPrivateKey,
+        flowAccount.address,
+        initialFundAmount
+      );
+
+      this.logger.log(`✓ Account funded successfully with ${initialFundAmount} FLOW`);
+
+      // Wait a moment for the transaction to settle
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    } catch (error) {
+      this.logger.error('Failed to fund new account', error);
+      this.logger.warn('Continuing without funding - CHToken vault setup may fail');
+    }
+
+    // Step 1.6: Setup CHToken vault for the newly created account
+    try {
+      this.logger.log(`Setting up CHToken vault for user: ${email}`);
+      const vaultSetup = await this.flowService.setupCHTokenVault(
+        flowAccount.address,
+        flowAccount.privateKey
+      );
+      this.logger.log(
+        `CHToken vault setup successful. Transaction: ${vaultSetup.transactionId}`
+      );
+    } catch (error) {
+      this.logger.error('Failed to setup CHToken vault', error);
+      // Note: We don't throw here to allow account creation to proceed
+      // The vault can be set up later if needed
+      this.logger.warn(
+        `User account created but CHToken vault setup failed: ${error.message}`
+      );
+    }
+
     // Step 2: Sign up with Supabase Auth (this will send verification email)
     const { data: authData, error: authError } =
       await this.supabaseService.userAuthClient.auth.signUp({

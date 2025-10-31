@@ -98,23 +98,10 @@ export class ProviderService {
       throw new BadRequestException("Signup failed");
     }
 
-    // Step 3: Store wallet details in wallet_details table
-    const { error: walletError } = await this.supabaseService.providerClient
-      .from("wallet_details")
-      .insert([
-        {
-          wallet_address: flowAccount.address,
-          private_key: flowAccount.privateKey,
-        },
-      ]);
-
-    if (walletError) {
-      // Rollback: delete auth user if wallet creation fails
-      await this.supabaseService.providerAuthClient.auth.admin.deleteUser(
-        authData.user.id
-      );
-      throw new Error(`Failed to store wallet details: ${walletError.message}`);
-    }
+    // Step 3: SKIPPED - Don't insert into wallet_details table for providers
+    // Since all providers share the same wallet address for testing,
+    // inserting into wallet_details causes duplicate key errors.
+    // Wallet address and private_key are stored directly in providers table instead.
 
     // Step 4: Store additional provider data in providers table with wallet reference
     const { data: newProvider, error: dbError } =
@@ -136,14 +123,11 @@ export class ProviderService {
         .single();
 
     if (dbError) {
-      // Rollback: delete auth user and wallet if profile creation fails
+      // Rollback: delete auth user if profile creation fails
       await this.supabaseService.providerAuthClient.auth.admin.deleteUser(
         authData.user.id
       );
-      await this.supabaseService.providerClient
-        .from("wallet_details")
-        .delete()
-        .eq("wallet_address", flowAccount.address);
+      // Note: No need to delete from wallet_details since we don't insert there for providers
       throw new Error(`Database error: ${dbError.message}`);
     }
 
